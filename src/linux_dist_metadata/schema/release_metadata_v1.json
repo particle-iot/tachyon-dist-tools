@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linux-dist.particle.io/schema/release_metadata_v1.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "The schema URL for validation"
+    },
+    "builds": {
+      "type": "array",
+      "description": "List of builds for various regions and variants",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "https://linux-dist.particle.io/schema/build_metadata_v1.json"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "artifact_url": {
+                      "type": "string",
+                      "description": "URL to the artifact"
+                    },
+                    "sha256_checksum": {
+                      "type": "string",
+                      "description": "SHA256 checksum of the artifact"
+                    },
+                    "type": {
+                      "type": "string",
+                      "description": "Type of the artifact"
+                    }
+                  },
+                  "required": ["artifact_url", "sha256_checksum", "type"]
+                },
+                "description": "List of artifact objects"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
