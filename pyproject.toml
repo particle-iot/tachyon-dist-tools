@@ -4,7 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linux-dist-metadata"
-# version = "0.1.0"
 description = "Tools for CI/CD pipelines"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -16,6 +15,9 @@ dynamic = ["dependencies", "version"]
 
 [project.optional-dependencies]
 dev = [
+  "setuptools-scm",
+  "build",
+  "setuptools",
   "pytest>=8",           # test runner (will run your unittest tests too)
   "coverage[toml]>=7.6", # coverage
   "ruff>=0.6",           # linter
@@ -51,4 +53,3 @@ show_missing = true
 skip_covered = true
 
 [tool.setuptools_scm]
-version_file = "src/linux_dist_metadata/_version.py"
