@@ -25,7 +25,9 @@ jobs:
           make install
 
       - name: Build wheel
-        run: python -m build --wheel
+        run: |
+          source .venv/bin/activate
+          python -m build --wheel
 
       - name: Upload wheel to release
         env:
