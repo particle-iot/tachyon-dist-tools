@@ -64,7 +64,6 @@
     "os",
     "distribution",
     "distribution_version",
-    "origin",
     "build_date"
   ]
 }

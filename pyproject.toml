@@ -24,9 +24,9 @@ dev = [
 ]
 
 [project.scripts]
-resolve_version = "linux_dist_metadata.resolve_version:main"
-update_release_metadata = "linux_dist_metadata.update_release_metadata:main"
-json_validator = "linux_dist_metadata.json_validator:main"
+tachyon-resolve-version = "linux_dist_metadata.resolve_version:main"
+tachyon-update-published-metadata = "linux_dist_metadata.update_published_metadata:main"
+tachyon-json-validator = "linux_dist_metadata.json_validator:main"
 
 [tool.setuptools]
 py-modules = ["linux_dist_metadata"]
