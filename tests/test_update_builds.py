@@ -6,7 +6,8 @@ import tempfile
 import os
 
 from hashlib import sha256
-import linux_dist_metadata
+from tachyon_dist_tools import update_builds
+from tachyon_dist_tools import s3_updater
 
 def make_build(distribution_version, url, hash, origin="test-origin"):
     if not hash or len(hash) != 64:
@@ -33,7 +34,7 @@ def make_build(distribution_version, url, hash, origin="test-origin"):
 class TestUpdateBuilds(unittest.TestCase):
   def test_update_builds(self):
       distribution_version = "24.04"
-      new_builds = { 
+      new_builds = {
          "builds": [
             make_build("24.04", "http://example.com/test-distribution_version-RoW-2.0.0.tar.gz", "dummyhashvalue"),
             make_build("24.04", "http://example.com/test-distribution_version-NA-2.0.0.tar.gz", "dummyhashvalue")
@@ -49,7 +50,7 @@ class TestUpdateBuilds(unittest.TestCase):
               make_build("20.04", "http://example.com/test-distribution_version-1.1.0.tar.gz", "oldhashvalue2")
           ]
       }
-      new_data = linux_dist_metadata.update_published_metadata.replace_builds(data, distribution_version, new_builds)
+      new_data = update_builds.replace_builds(data, distribution_version, new_builds)
       assert len(new_data["builds"]) == 4
       other_distribution_versions = [ b for b in new_data["builds"] if "distribution_version" not in b or b["distribution_version"] != distribution_version ]
       assert len(other_distribution_versions) == 2
@@ -58,8 +59,8 @@ class TestUpdateBuilds(unittest.TestCase):
 
 class TestUpdatePublishedMetadata(unittest.TestCase):
 
-   @patch("linux_dist_metadata.s3.read_s3_object")
-   @patch("linux_dist_metadata.s3.write_s3_object")
+   @patch("tachyon_dist_tools.s3_updater.read_s3_object")
+   @patch("tachyon_dist_tools.s3_updater.write_s3_object")
    def test_main(self, mock_write, mock_read):
         mock_read.return_value = None
         mock_write.return_value = True
@@ -78,7 +79,7 @@ class TestUpdatePublishedMetadata(unittest.TestCase):
                   make_build("24.04", "http://example.com/test-distribution_version-1.5.0.tar.gz", "oldhashvalue2")
               ]
           }
-          new_metadata = { 
+          new_metadata = {
              "$schema": "https://linux-dist.particle.io/schema/release_metadata_v1.json",
              "builds": [
                 make_build("24.04", "http://example.com/test-distribution_version-RoW-2.0.0.tar.gz", "dummyhashvalue"),
@@ -92,22 +93,22 @@ class TestUpdatePublishedMetadata(unittest.TestCase):
 
           mock_read.side_effect = lambda bucket, key, dest, transaction_file: shutil.copy(existing_metadata_path, dest)
 
-       
+
           with patch("argparse._sys.argv", ["update_published_metadata.py", "test-bucket", "test-key", new_metadata_path, "--origin", "test-origin"]):
             try:
-                from linux_dist_metadata.update_published_metadata import main
+                from tachyon_dist_tools.update_published_metadata import main
                 main()
             except SystemExit as e:
                 self.assertEqual(e.code, 0)
 
 
 
-   @patch("linux_dist_metadata.s3.read_s3_object")
-   @patch("linux_dist_metadata.s3.write_s3_object")
+   @patch("tachyon_dist_tools.s3_updater.read_s3_object")
+   @patch("tachyon_dist_tools.s3_updater.write_s3_object")
    def test_write_conflict(self, mock_write, mock_read):
         """Simulate a write conflict and ensure the retry logic works. Expected to fail after max retries."""
         mock_read.return_value = None
-        mock_write.side_effect = linux_dist_metadata.s3.S3WriteConflict()
+        mock_write.side_effect = s3_updater.S3WriteConflict()
 
         with tempfile.TemporaryDirectory() as tempdir:
             existing_metadata_path = os.path.join(tempdir, "existing_metadata.json")
@@ -123,7 +124,7 @@ class TestUpdatePublishedMetadata(unittest.TestCase):
                     make_build("24.04", "http://example.com/test-distribution_version-1.5.0.tar.gz", "oldhashvalue2")
                 ]
             }
-            new_metadata = { 
+            new_metadata = {
                 "$schema": "https://linux-dist.particle.io/schema/release_metadata_v1.json",
                 "builds": [
                     make_build("24.04", "http://example.com/test-distribution_version-RoW-2.0.0.tar.gz", "dummyhashvalue"),
@@ -137,11 +138,10 @@ class TestUpdatePublishedMetadata(unittest.TestCase):
 
             mock_read.side_effect = lambda bucket, key, dest, transaction_file: shutil.copy(existing_metadata_path, dest)
 
-        
+
             with patch("argparse._sys.argv", ["update_published_metadata.py", "test-bucket", "test-key", new_metadata_path, "--origin", "test-origin", "--max_retries", "2"]):
                 try:
-                    from linux_dist_metadata.update_published_metadata import main
+                    from tachyon_dist_tools.update_published_metadata import main
                     main()
                 except SystemExit as e:
                     self.assertEqual(e.code, 1)
-          
