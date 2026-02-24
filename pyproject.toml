@@ -24,11 +24,11 @@ dev = [
 ]
 
 [project.scripts]
-resolve-version = "tachyon_dist_tools.resolve_version:main"
-update-published-metadata = "tachyon_dist_tools.update_published_metadata:main"
-json-validator = "tachyon_dist_tools.json_validator:main"
-s3-updater = "tachyon_dist_tools.s3_updater:main"
-gh-note-builder = "tachyon_dist_tools.gh_note_builder:main"
+tachyon-resolve-version = "tachyon_dist_tools.resolve_version:main"
+tachyon-update-published-metadata = "tachyon_dist_tools.update_published_metadata:main"
+tachyon-json-validator = "tachyon_dist_tools.json_validator:main"
+tachyon-s3-updater = "tachyon_dist_tools.s3_updater:main"
+tachyon-gh-note-builder = "tachyon_dist_tools.gh_note_builder:main"
 
 [tool.setuptools.package-data]
 "tachyon_dist_tools.schema" = ["*.json"]

@@ -31,7 +31,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           source .venv/bin/activate
-          VERSION=$(resolve-version --build-type release --create-tag)
+          VERSION=$(tachyon-resolve-version --build-type release --create-tag)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
