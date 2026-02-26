@@ -28,10 +28,10 @@ def tag_exists(repo, tag_name):
 def infer_github_repo(repo):
     """
     Infers the GitHub repository owner and name from the remote URL.
-    
+
     Args:
         repo (Repo): GitPython Repo object.
-    
+
     Returns:
         str: Repository name in the format "owner/repo".
     """
@@ -59,12 +59,12 @@ def infer_github_repo(repo):
 def create_version_tag_with_github(repo, version, github_token):
     """
     Creates a new tag for the given version using the GitHub API.
-    
+
     Args:
         repo (Repo): GitPython Repo object.
         version (str): The version tag to create.
         github_token (str): GitHub personal access token.
-    
+
     Returns:
         str: The created tag name.
     """
@@ -88,7 +88,7 @@ def create_version_tag_with_github(repo, version, github_token):
 def find_ancestral_release_version(repo, prefix=None, relative_to="HEAD"):
     """Finds the most recent semver tag in the commit history."""
     commit_log = repo.git.log("--simplify-by-decoration", "--pretty=format:%D", relative_to)
-    
+
     tags_in_history = []
     for line in commit_log.splitlines():
         for entry in line.split(","):
@@ -98,7 +98,7 @@ def find_ancestral_release_version(repo, prefix=None, relative_to="HEAD"):
     for tag in tags_in_history:
         if prefix and not tag.startswith(prefix):
             continue
-        
+
         tagVersion = tag[len(prefix):] if prefix else tag
 
         if semver.VersionInfo.is_valid(tagVersion):
@@ -120,13 +120,13 @@ def get_semver_tags_on_commit(repo):
     tags_on_commit = [
         tag.name for tag in repo.tags if tag.commit == repo.head.commit
     ]
-    
+
     # Filter tags to include only valid SemVer values
     semver_tags = [tag for tag in tags_on_commit if semver.Version.is_valid(tag) and not semver.Version.parse(tag).prerelease and not semver.Version.parse(tag).build]
-    
+
     # Sort SemVer tags in descending order (highest version first)
     semver_tags_sorted = sorted(semver_tags, key=semver.Version.parse, reverse=True)
-    
+
     return semver_tags_sorted
 
 def get_stable_tags_on_commit(repo):
@@ -143,7 +143,7 @@ def get_stable_tags_on_commit(repo):
     tags_on_commit = [
         tag.name for tag in repo.tags if tag.commit == repo.head.commit
     ]
-    
+
     # Filter tags to include only valid stable SemVer values
     stable_tags = []
     stable_prefix = "stable-"
@@ -155,10 +155,10 @@ def get_stable_tags_on_commit(repo):
             if tag[len(stable_prefix):] not in tags_on_commit:
                 raise ValueError(f"There is no matching version tag for {tag} on the current commit.  This needs to be fixed.")
             stable_tags.append(tag[len(stable_prefix):])
-        
+
     # Sort stable SemVer tags in descending order (highest version first)
     stable_tags_sorted = sorted(stable_tags, key=semver.Version.parse, reverse=True)
-    
+
     return stable_tags_sorted
 
 def resolve_stable_version(repo):
@@ -167,7 +167,7 @@ def resolve_stable_version(repo):
     if commit_versions:
         # If there are existing tags on the commit, use the latest one rather than bumping the latest version
         return commit_versions[0]
-    
+
     raise RuntimeError("No valid semver tags found on this commit.")
 
 def resolve_release_version(repo):
@@ -204,11 +204,11 @@ def main():
     github_token = os.getenv("GITHUB_TOKEN")
     if not github_token and args.create_tag:
         raise RuntimeError("Environment variable GITHUB_TOKEN must be set to create a tag")
-        
+
     build_type = args.build_type
     release_channel = args.release_channel
 
-    if release_channel == "stable": 
+    if release_channel == "stable":
         if build_type != "release":
             raise ValueError("Release channel 'stable' can only be used with build type 'release'")
         if args.create_tag:
@@ -254,4 +254,3 @@ if __name__ == "__main__":
     except Exception as e:
       print(f"An error occurred: {e}")
       sys.exit(1)
-

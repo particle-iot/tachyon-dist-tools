@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel", "build", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "linux-dist-metadata"
+name = "tachyon-dist-tools"
 description = "Tools for CI/CD pipelines"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -24,13 +24,14 @@ dev = [
 ]
 
 [project.scripts]
-tachyon-resolve-version = "linux_dist_metadata.resolve_version:main"
-tachyon-update-published-metadata = "linux_dist_metadata.update_published_metadata:main"
-tachyon-json-validator = "linux_dist_metadata.json_validator:main"
+tachyon-resolve-version = "tachyon_dist_tools.resolve_version:main"
+tachyon-update-published-metadata = "tachyon_dist_tools.update_published_metadata:main"
+tachyon-json-validator = "tachyon_dist_tools.json_validator:main"
+tachyon-s3-updater = "tachyon_dist_tools.s3_updater:main"
+tachyon-gh-note-builder = "tachyon_dist_tools.gh_note_builder:main"
 
-[tool.setuptools]
-py-modules = ["linux_dist_metadata"]
-package-dir = { "" = "src" }
+[tool.setuptools.package-data]
+"tachyon_dist_tools.schema" = ["*.json"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
@@ -41,12 +42,11 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.setuptools.packages.find]
-where = ["src"]
 exclude = ["tests", "tests.*", "*.tests", "*.tests.*"]
 
 [tool.coverage.run]
 branch = true
-source = ["src/linux_dist_metadata"]
+source = ["tachyon_dist_tools"]
 
 [tool.coverage.report]
 show_missing = true

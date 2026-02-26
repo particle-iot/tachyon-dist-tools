@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 import semver
 
 
-from linux_dist_metadata.resolve_version import (
+from tachyon_dist_tools.resolve_version import (
     main,
     resolve_stable_version,
     resolve_release_version,
@@ -30,6 +30,12 @@ class TestGitFunctions(unittest.TestCase):
         # Initialize the Git repository
         self.repo = Repo.init(self.temp_dir)
         print("Initialized a new Git repository.")
+
+        # Configure git identity and disable GPG signing for tests
+        self.repo.config_writer().set_value("user", "name", "Test User").release()
+        self.repo.config_writer().set_value("user", "email", "test@example.local").release()
+        self.repo.config_writer().set_value("commit", "gpgsign", "false").release()
+        self.repo.config_writer().set_value("tag", "gpgsign", "false").release()
 
         # Create an initial commit
         file_path = os.path.join(self.temp_dir, "README.md")
@@ -148,7 +154,7 @@ class TestGitFunctions(unittest.TestCase):
         # This should raise an error because the stable tag is invalid
         with self.assertRaises(ValueError) as context:
             get_stable_tags_on_commit(self.repo)
-        
+
     def test_get_stable_tags_on_commit_pre(self):
         """Test finding stable tags on the current commit when there is a stable tag incorrectly referencing a pre-release tag."""
         print("Running test_get_semver_tags_on_commit.")
@@ -164,7 +170,7 @@ class TestGitFunctions(unittest.TestCase):
         # Run the function under test
         # This should raise an error because the stable tag is invalid
         with self.assertRaises(ValueError) as context:
-            get_stable_tags_on_commit(self.repo)        
+            get_stable_tags_on_commit(self.repo)
 
     def test_tag_exists(self):
         """Tests the tag_exists function."""
@@ -183,7 +189,7 @@ class TestGitFunctions(unittest.TestCase):
             f.write("\nNew version")
         self.repo.index.add([file_path])
         self.repo.index.commit("New commit")
-        
+
         # Run the function under test
         for tag in valid_tags + invalid_tags:
             result = tag_exists(self.repo, tag)
@@ -196,7 +202,7 @@ class TestGitFunctions(unittest.TestCase):
     def test_find_ancestral_release_version_with_multiple_tags(self):
         """
         Tests finding the most recent semver tag in the current branch's history
-        when two tagged releases exist on the develop branch, 
+        when two tagged releases exist on the develop branch,
         and a new branch is created from the earlier tagged version.
         """
         # Create and switch to the develop branch
@@ -258,7 +264,7 @@ class TestGitFunctions(unittest.TestCase):
     def test_find_ancestral_stable_release_version_with_multiple_tags(self):
         """
         Tests finding the most recent stable tag in the current branch's history
-        when two tagged releases exist on the develop branch, 
+        when two tagged releases exist on the develop branch,
         and a new branch is created from the earlier tagged version.
         """
         # Create and switch to the develop branch
@@ -281,9 +287,9 @@ class TestGitFunctions(unittest.TestCase):
 
         # Test ancestral version detection on the new branch
         ancestral_version = find_ancestral_release_version(self.repo, "stable-", "HEAD~")
-        self.assertEqual(ancestral_version, "stable-1.0.0")        
+        self.assertEqual(ancestral_version, "stable-1.0.0")
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.Repo")
     def test_infer_github_repo(self, mock_repo):
         """
         Test that infer_github_repo correctly parses repository names from remote URLs.
@@ -314,7 +320,7 @@ class TestGitFunctions(unittest.TestCase):
 
 class TestVersionResolution(unittest.TestCase):
 
-    @patch("linux_dist_metadata.resolve_version.get_stable_tags_on_commit", return_value=["1.0.1", "1.0.0", "0.9.9"])
+    @patch("tachyon_dist_tools.resolve_version.get_stable_tags_on_commit", return_value=["1.0.1", "1.0.0", "0.9.9"])
     def test_resolve_stable_version(self, mock_get_stable_tags_on_commit):
         """
         Tests that resolve_stable_version correctly determines the latest stable version
@@ -332,8 +338,8 @@ class TestVersionResolution(unittest.TestCase):
         self.assertEqual(resolved_version, "1.0.1")
         print("Finished test: test_resolve_stable_version")
 
-    @patch("linux_dist_metadata.resolve_version.get_latest_version_tag", return_value="2.0.0")
-    @patch("linux_dist_metadata.resolve_version.get_semver_tags_on_commit", return_value=[])
+    @patch("tachyon_dist_tools.resolve_version.get_latest_version_tag", return_value="2.0.0")
+    @patch("tachyon_dist_tools.resolve_version.get_semver_tags_on_commit", return_value=[])
     def test_resolve_release_version(self, mock_get_latest_version_tag, mock_get_semver_tags_on_commit):
         """
         Tests that resolve_release_version correctly determines the next patch version
@@ -352,8 +358,8 @@ class TestVersionResolution(unittest.TestCase):
         self.assertEqual(resolved_version, "2.0.1")
         print("Finished test: test_resolve_release_version")
 
-    @patch("linux_dist_metadata.resolve_version.get_latest_version_tag", return_value="2.0.0")
-    @patch("linux_dist_metadata.resolve_version.get_semver_tags_on_commit", return_value=["1.0.0"])
+    @patch("tachyon_dist_tools.resolve_version.get_latest_version_tag", return_value="2.0.0")
+    @patch("tachyon_dist_tools.resolve_version.get_semver_tags_on_commit", return_value=["1.0.0"])
     def test_resolve_release_version_with_tag_on_commit(self, mock_get_latest_version_tag, mock_get_semver_tags_on_commit):
         """
         Tests that resolve_release_version correctly determines the next patch version
@@ -371,7 +377,7 @@ class TestVersionResolution(unittest.TestCase):
         # Assert the resolved version is the next patch of the latest tag
         self.assertEqual(resolved_version, "1.0.0")
 
-    @patch("linux_dist_metadata.resolve_version.find_ancestral_release_version", return_value="1.0.0")
+    @patch("tachyon_dist_tools.resolve_version.find_ancestral_release_version", return_value="1.0.0")
     def test_resolve_prerelease_version(self, mock_find_ancestral_release_version):
         """
         Tests that resolve_prerelease_version correctly determines the next prerelease version
@@ -390,7 +396,7 @@ class TestVersionResolution(unittest.TestCase):
         self.assertEqual(resolved_version, "1.0.0-dev+build.12345")
         print("Finished test: test_resolve_prerelease_version")
 
-    @patch("linux_dist_metadata.resolve_version.find_ancestral_release_version", return_value=None)
+    @patch("tachyon_dist_tools.resolve_version.find_ancestral_release_version", return_value=None)
     def test_resolve_prerelease_version_no_ancestral_version(self, mock_find_ancestral_release_version):
         """
         Tests that resolve_prerelease_version correctly determines the next prerelease version
@@ -411,8 +417,8 @@ class TestVersionResolution(unittest.TestCase):
 
 class TestCreateVersionTagWithGithub(unittest.TestCase):
 
-    @patch("linux_dist_metadata.resolve_version.Github")
-    @patch("linux_dist_metadata.resolve_version.infer_github_repo")
+    @patch("tachyon_dist_tools.resolve_version.Github")
+    @patch("tachyon_dist_tools.resolve_version.infer_github_repo")
     def test_create_tag_success(self, mock_infer_repo, mock_github):
         """Test that a tag is successfully created."""
         # Mock repository and commit
@@ -436,8 +442,8 @@ class TestCreateVersionTagWithGithub(unittest.TestCase):
         mock_gh_repo.create_git_ref.assert_called_once_with(ref=f"refs/tags/{version}", sha="abc123")
         self.assertEqual(result, version)
 
-    @patch("linux_dist_metadata.resolve_version.Github")
-    @patch("linux_dist_metadata.resolve_version.infer_github_repo")
+    @patch("tachyon_dist_tools.resolve_version.Github")
+    @patch("tachyon_dist_tools.resolve_version.infer_github_repo")
     def test_create_tag_invalid_repo(self, mock_infer_repo, mock_github):
         """Test that an error is raised when the repository is invalid."""
         # Mock repository and commit
@@ -459,8 +465,8 @@ class TestCreateVersionTagWithGithub(unittest.TestCase):
         mock_github.assert_called_once_with(github_token)
 
 
-    @patch("linux_dist_metadata.resolve_version.Github")
-    @patch("linux_dist_metadata.resolve_version.infer_github_repo")
+    @patch("tachyon_dist_tools.resolve_version.Github")
+    @patch("tachyon_dist_tools.resolve_version.infer_github_repo")
     def test_create_tag_duplicate_tag(self, mock_infer_repo, mock_github):
         """Test that an error is raised when the tag already exists."""
         # Mock repository and commit
@@ -488,14 +494,14 @@ class TestCreateVersionTagWithGithub(unittest.TestCase):
 
 class TestMainFunction(unittest.TestCase):
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
-    @patch("linux_dist_metadata.resolve_version.resolve_stable_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_release_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_prerelease_version")
-    @patch("linux_dist_metadata.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_stable_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
     @patch("sys.stdout", new_callable=MagicMock)
-    def test_release_build(self, mock_stdout, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_resolve_stable, mock_repo):
-        """Test main for a release build."""
+    def test_stable_release_build(self, mock_stdout, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_resolve_stable, mock_repo):
+        """Test main for a stable release build."""
         mock_repo.return_value.bare = False
         mock_resolve_stable.return_value = "1.0.1"
 
@@ -511,11 +517,11 @@ class TestMainFunction(unittest.TestCase):
         output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
         self.assertEqual(output.strip(), "1.0.1")
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
-    @patch("linux_dist_metadata.resolve_version.resolve_stable_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_release_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_prerelease_version")
-    @patch("linux_dist_metadata.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_stable_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
     @patch("sys.stdout", new_callable=MagicMock)
     def test_release_build(self, mock_stdout, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_resolve_stable, mock_repo):
         """Test main for a release build."""
@@ -534,10 +540,10 @@ class TestMainFunction(unittest.TestCase):
         output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
         self.assertEqual(output.strip(), "1.0.1")
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
-    @patch("linux_dist_metadata.resolve_version.resolve_release_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_prerelease_version")
-    @patch("linux_dist_metadata.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
     @patch("sys.stdout", new_callable=MagicMock)
     def test_prerelease_build(self, mock_stdout, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_repo):
         """Test main for a prerelease build."""
@@ -555,10 +561,10 @@ class TestMainFunction(unittest.TestCase):
         output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
         self.assertEqual(output.strip(), "1.0.0+build.1234")
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
-    @patch("linux_dist_metadata.resolve_version.resolve_release_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_prerelease_version")
-    @patch("linux_dist_metadata.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
     @patch("sys.stdout", new_callable=MagicMock)
     def test_create_tag_without_github_token(self, mock_stdout, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_repo):
         """Test main with --create-tag and no GITHUB_TOKEN."""
@@ -574,10 +580,10 @@ class TestMainFunction(unittest.TestCase):
         mock_create_tag.assert_not_called()
         mock_stdout.write.assert_not_called()
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
-    @patch("linux_dist_metadata.resolve_version.resolve_release_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_prerelease_version")
-    @patch("linux_dist_metadata.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
     @patch("sys.stdout", new_callable=MagicMock)
     def test_create_tag_with_github_token(self, mock_stdout, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_repo):
         """Test main with --create-tag and GITHUB_TOKEN set."""
@@ -595,12 +601,12 @@ class TestMainFunction(unittest.TestCase):
         output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
         self.assertEqual(output.strip(), "1.0.1")
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
-    @patch("linux_dist_metadata.resolve_version.resolve_release_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_prerelease_version")
-    @patch("linux_dist_metadata.resolve_version.create_version_tag_with_github")
-    @patch("linux_dist_metadata.resolve_version.tag_exists", return_value=True)
-    @patch("linux_dist_metadata.resolve_version.get_semver_tags_on_commit", return_value=["2.0.0"])
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.tag_exists", return_value=True)
+    @patch("tachyon_dist_tools.resolve_version.get_semver_tags_on_commit", return_value=["2.0.0"])
     @patch("sys.stdout", new_callable=MagicMock)
     def test_create_tag_with_existing_tag_github_token(self, mock_stdout, mock_get_semver_tags_on_commit, mock_tag_exists, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_repo):
         """Test main with --create-tag and GITHUB_TOKEN set. Existing tag on commit."""
@@ -620,12 +626,12 @@ class TestMainFunction(unittest.TestCase):
         output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
         self.assertEqual(output.strip(), "2.0.0")
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
-    @patch("linux_dist_metadata.resolve_version.resolve_release_version")
-    @patch("linux_dist_metadata.resolve_version.resolve_prerelease_version")
-    @patch("linux_dist_metadata.resolve_version.create_version_tag_with_github")
-    @patch("linux_dist_metadata.resolve_version.tag_exists", return_value=True)
-    @patch("linux_dist_metadata.resolve_version.get_semver_tags_on_commit", return_value=[])
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.tag_exists", return_value=True)
+    @patch("tachyon_dist_tools.resolve_version.get_semver_tags_on_commit", return_value=[])
     @patch("sys.stdout", new_callable=MagicMock)
     def test_create_tag_with_bad_existing_tag_github_token(self, mock_stdout, mock_get_semver_tags_on_commit, mock_tag_exists, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_repo):
         """Test main with --create-tag and GITHUB_TOKEN set. Existing tag on a different commit."""
@@ -646,7 +652,7 @@ class TestMainFunction(unittest.TestCase):
         output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
         self.assertEqual(output.strip(), "")
 
-    @patch("linux_dist_metadata.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.Repo")
     def test_invalid_git_repository(self, mock_repo):
         """Test main with an invalid Git repository."""
         mock_repo.return_value.bare = True
@@ -655,7 +661,7 @@ class TestMainFunction(unittest.TestCase):
             with self.assertRaises(Exception) as context:
                 main()
             self.assertIn("Not a valid git repository", str(context.exception))
-    
+
 
 if __name__ == "__main__":
     unittest.main()

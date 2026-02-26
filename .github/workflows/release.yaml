@@ -1,36 +1,51 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
-  build-and-upload:
+  release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.x"
 
-      - name: Install build dependencies
+      - name: Install dependencies
+        run: make install
+
+      - name: Resolve version and create tag
+        id: version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          make install
+          source .venv/bin/activate
+          VERSION=$(tachyon-resolve-version --build-type release --create-tag)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
 
       - name: Build wheel
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
         run: |
           source .venv/bin/activate
           python -m build --wheel
 
-      - name: Upload wheel to release
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} dist/*.whl
+          gh release create ${{ steps.version.outputs.version }} dist/*.whl \
+            --title "${{ steps.version.outputs.version }}" \
+            --generate-notes
