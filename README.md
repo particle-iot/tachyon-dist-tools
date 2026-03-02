@@ -14,8 +14,10 @@ CI/CD utilities for managing Tachyon distribution builds, versioning, and releas
 
 ## Installation
 
+Install from the [latest GitHub release](https://github.com/particle-iot/tachyon-dist-tools/releases/latest):
+
 ```sh
-pip install .
+pip install https://github.com/particle-iot/tachyon-dist-tools/releases/download/<version>/tachyon_dist_tools-<version>-py3-none-any.whl
 ```
 
 ## Development
