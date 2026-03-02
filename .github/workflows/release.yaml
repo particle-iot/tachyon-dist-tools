@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -18,9 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.12"
 
       - name: Install dependencies
         run: make install
@@ -49,3 +50,16 @@ jobs:
           gh release create ${{ steps.version.outputs.version }} dist/*.whl \
             --title "${{ steps.version.outputs.version }}" \
             --generate-notes
+
+      - name: Configure AWS credentials for schema publishing
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: tachyon-dist-tools-release-${{ github.run_id }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Publish schema
+        env:
+          S3_BUCKET: ${{ secrets.LINUX_DIST_S3_BUCKET }}
+        run: |
+          aws s3 sync tachyon_dist_tools/schema/ s3://$S3_BUCKET/schema/ --exclude "*" --include "*.json"
