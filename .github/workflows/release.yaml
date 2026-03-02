@@ -63,3 +63,9 @@ jobs:
           S3_BUCKET: ${{ secrets.LINUX_DIST_S3_BUCKET }}
         run: |
           aws s3 sync tachyon_dist_tools/schema/ s3://$S3_BUCKET/schema/ --exclude "*" --include "*.json"
+
+      - name: Invalidate CloudFront cache
+        env:
+          DISTRIBUTION_ID: ${{ secrets.LINUX_DIST_CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/schema/*"
