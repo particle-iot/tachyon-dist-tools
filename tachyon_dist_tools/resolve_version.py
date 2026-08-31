@@ -15,9 +15,33 @@ def log_debug(message):
     print(message, file=sys.stderr)
 
 
-def get_latest_version_tag(repo):
-    """Returns the latest semver tag in the repository."""
-    valid_tags = [tag.name for tag in repo.tags if semver.VersionInfo.is_valid(tag.name)]
+def strip_tag_prefix(name, prefix=""):
+    """Return the semver portion of a tag name for the given stream, or None.
+
+    With an empty prefix (the default) the tag is returned unchanged -- this is
+    the historical, single-stream behaviour. With a non-empty prefix (e.g.
+    "26.04/") the tag must start with it; the prefix is stripped and the
+    remainder returned, so callers can parse/compare a clean semver. Tags that
+    do not belong to the prefixed stream return None and are ignored.
+    """
+    if not prefix:
+        return name
+    if not name.startswith(prefix):
+        return None
+    return name[len(prefix):]
+
+
+def get_latest_version_tag(repo, prefix=""):
+    """Returns the latest semver tag in the repository (within a tag stream).
+
+    `prefix` selects a series-namespaced tag stream (e.g. "26.04/"); the default
+    empty prefix considers every bare semver tag, exactly as before.
+    """
+    valid_tags = []
+    for tag in repo.tags:
+        v = strip_tag_prefix(tag.name, prefix)
+        if v is not None and semver.VersionInfo.is_valid(v):
+            valid_tags.append(v)
     return max(valid_tags, key=semver.VersionInfo.parse, default="1.0.0")
 
 def tag_exists(repo, tag_name):
@@ -106,19 +130,25 @@ def find_ancestral_release_version(repo, prefix=None, relative_to="HEAD"):
     return None
 
 
-def get_semver_tags_on_commit(repo):
+def get_semver_tags_on_commit(repo, prefix=""):
     """
     Retrieves all tags on the current commit and filters them to include only valid SemVer values.
 
     Args:
         repo (Repo): GitPython Repo object.
+        prefix (str): Tag-stream prefix (e.g. "26.04/"); default "" == the bare
+            single-stream behaviour. Tags outside the stream are ignored and the
+            prefix is stripped from the returned versions.
 
     Returns:
         list: A list of valid SemVer tags (sorted by version, descending).
     """
-    # Get all tags pointing to the current commit
+    # Get all tags pointing to the current commit, reduced to this stream's semver.
     tags_on_commit = [
-        tag.name for tag in repo.tags if tag.commit == repo.head.commit
+        v for v in (
+            strip_tag_prefix(tag.name, prefix)
+            for tag in repo.tags if tag.commit == repo.head.commit
+        ) if v is not None
     ]
 
     # Filter tags to include only valid SemVer values
@@ -170,21 +200,36 @@ def resolve_stable_version(repo):
 
     raise RuntimeError("No valid semver tags found on this commit.")
 
-def resolve_release_version(repo):
-    """Resolve the version number for a release build."""
-    latest_version = get_latest_version_tag(repo)
-    commit_versions = get_semver_tags_on_commit(repo)
+def resolve_release_version(repo, prefix=""):
+    """Resolve the version number for a release build.
+
+    `prefix` scopes resolution to a series-namespaced tag stream (e.g. "26.04/");
+    default "" resolves the bare stream exactly as before. The returned version
+    is always clean semver (the prefix is never part of the output).
+    """
+    latest_version = get_latest_version_tag(repo, prefix)
+    commit_versions = get_semver_tags_on_commit(repo, prefix)
     if commit_versions:
         # If there are existing tags on the commit, use the latest one rather than bumping the latest version
         return commit_versions[0]
 
     return str(semver.VersionInfo.parse(latest_version).bump_patch())
 
-def resolve_prerelease_version(repo, build_id):
-    ancestral_version = find_ancestral_release_version(repo)
-    if not ancestral_version:
-        ancestral_version = "99.99.9999"
-    return f"{ancestral_version}-dev+{build_id}"
+def resolve_prerelease_version(repo, build_id, prefix="", seed_version="99.99.9999"):
+    """Resolve the version number for a prerelease build.
+
+    Anchors on the nearest ancestral release tag in this stream. `prefix` scopes
+    to a series-namespaced stream; the prefix is stripped from the base version.
+    `seed_version` is the fallback when the stream has no ancestral tag yet -- for
+    a brand-new series this is how its first prereleases carry the intended
+    number (e.g. 1.3.0) instead of the generic 99.99.9999 placeholder.
+    """
+    ancestral_tag = find_ancestral_release_version(repo, prefix or None)
+    if not ancestral_tag:
+        base_version = seed_version
+    else:
+        base_version = ancestral_tag[len(prefix):] if prefix else ancestral_tag
+    return f"{base_version}-dev+{build_id}"
 
 
 def main():
@@ -194,6 +239,15 @@ def main():
     parser.add_argument("--release-channel", type=str, default="latest", help="The release channel to use for versioning")
     parser.add_argument("--get-previous-version", action="store_true", help="Get the previous version tag instead of resolving a new one")
     parser.add_argument("--create-tag", action="store_true", help="Create a new tag for the resolved version")
+    parser.add_argument("--tag-prefix", type=str, default="",
+                        help="Resolve within a series-namespaced tag stream, e.g. '26.04/'. "
+                             "Default (empty) uses the single bare-semver stream. The resolved "
+                             "version printed to stdout is always clean semver; the prefix is only "
+                             "applied to the underlying git tag.")
+    parser.add_argument("--seed-version", type=str, default="99.99.9999",
+                        help="Fallback base version for a prerelease when the (prefixed) stream has "
+                             "no ancestral release tag yet -- used to seed a brand-new series' first "
+                             "prereleases at the intended number (e.g. 1.3.0).")
     args = parser.parse_args()
 
     repo = Repo(".")
@@ -207,12 +261,17 @@ def main():
 
     build_type = args.build_type
     release_channel = args.release_channel
+    tag_prefix = args.tag_prefix
 
     if release_channel == "stable":
         if build_type != "release":
             raise ValueError("Release channel 'stable' can only be used with build type 'release'")
         if args.create_tag:
             raise ValueError("Create tag option cannot be used with release channel 'stable'")
+        if tag_prefix:
+            # The stable channel keys off a 'stable-<semver>' prefix; combining it with a
+            # series prefix is not defined. 26.04's stable channel is out of scope for now.
+            raise ValueError("--tag-prefix is not supported with release channel 'stable'")
 
     if build_type == "prerelease" and not args.build_id:
         raise ValueError("Build ID must be provided for prerelease builds")
@@ -223,7 +282,9 @@ def main():
         if build_type == "release" and release_channel == "stable":
             version = find_ancestral_release_version(repo, "stable-", "HEAD~")
         elif build_type == "release":
-            version = find_ancestral_release_version(repo, relative_to="HEAD~")
+            # Return the full (prefixed) tag: it must resolve as a git ref for the
+            # downstream changelog range. For the bare stream this is unchanged.
+            version = find_ancestral_release_version(repo, tag_prefix or None, "HEAD~")
         else:
             raise ValueError("Cannot get previous version for prerelease builds")
         print(version)
@@ -232,18 +293,20 @@ def main():
     if build_type == "release" and release_channel == "stable":
         version = resolve_stable_version(repo)
     elif build_type == "release":
-        version = resolve_release_version(repo)
+        version = resolve_release_version(repo, tag_prefix)
     else:
-        version = resolve_prerelease_version(repo, args.build_id)
+        version = resolve_prerelease_version(repo, args.build_id, tag_prefix, args.seed_version)
 
     if args.create_tag:
-      if not tag_exists(repo, version):
-        create_version_tag_with_github(repo, version, github_token)
+      # The git tag carries the stream prefix; the printed version stays clean semver.
+      tag_name = f"{tag_prefix}{version}"
+      if not tag_exists(repo, tag_name):
+        create_version_tag_with_github(repo, tag_name, github_token)
       else:
-        if version not in get_semver_tags_on_commit(repo):
-          raise RuntimeError(f"Tag {version} already exists on the repository but is not on the current commit")
+        if version not in get_semver_tags_on_commit(repo, tag_prefix):
+          raise RuntimeError(f"Tag {tag_name} already exists on the repository but is not on the current commit")
         else:
-          log_debug(f"Tag {version} already exists on this tag")
+          log_debug(f"Tag {tag_name} already exists on this tag")
 
     # Output the resolved version to stdout
     print(version)

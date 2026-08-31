@@ -18,6 +18,7 @@ from tachyon_dist_tools.resolve_version import (
     get_semver_tags_on_commit,
     get_stable_tags_on_commit,
     tag_exists,
+    strip_tag_prefix,
 )
 
 class TestGitFunctions(unittest.TestCase):
@@ -289,6 +290,80 @@ class TestGitFunctions(unittest.TestCase):
         ancestral_version = find_ancestral_release_version(self.repo, "stable-", "HEAD~")
         self.assertEqual(ancestral_version, "stable-1.0.0")
 
+    # ---- series-namespaced tag streams (--tag-prefix) --------------------
+
+    def _commit_and_tag(self, marker, tags):
+        """Add a commit and place `tags` (a list) on it."""
+        file_path = os.path.join(self.temp_dir, "CHANGELOG.md")
+        with open(file_path, "a") as f:
+            f.write(f"\n{marker}")
+        self.repo.index.add([file_path])
+        self.repo.index.commit(f"commit {marker}")
+        for t in tags:
+            self.repo.create_tag(t, message=f"Tag {t}")
+
+    def test_strip_tag_prefix(self):
+        # Empty prefix is a passthrough (historical single-stream behaviour).
+        self.assertEqual(strip_tag_prefix("1.2.3", ""), "1.2.3")
+        self.assertEqual(strip_tag_prefix("26.04/1.3.0", ""), "26.04/1.3.0")
+        # Non-empty prefix strips only matching tags; others are dropped.
+        self.assertEqual(strip_tag_prefix("26.04/1.3.0", "26.04/"), "1.3.0")
+        self.assertIsNone(strip_tag_prefix("1.2.3", "26.04/"))
+        self.assertIsNone(strip_tag_prefix("24.04/1.2.3", "26.04/"))
+
+    def test_get_latest_version_tag_streams_are_independent(self):
+        # Bare (24.04) stream and a 26.04/ stream coexist on the same repo.
+        self._commit_and_tag("a", ["1.2.19"])
+        self._commit_and_tag("b", ["26.04/1.3.0"])
+        self._commit_and_tag("c", ["26.04/1.3.1"])
+        self._commit_and_tag("d", ["1.2.20"])
+        # Bare stream ignores the namespaced tags entirely...
+        self.assertEqual(get_latest_version_tag(self.repo), "1.2.20")
+        self.assertEqual(get_latest_version_tag(self.repo, ""), "1.2.20")
+        # ...and the 26.04 stream ignores the bare tags, returning clean semver.
+        self.assertEqual(get_latest_version_tag(self.repo, "26.04/"), "1.3.1")
+        # An empty stream falls back to the historical default.
+        self.assertEqual(get_latest_version_tag(self.repo, "99.99/"), "1.0.0")
+
+    def test_get_semver_tags_on_commit_with_prefix(self):
+        self._commit_and_tag("x", ["1.2.19", "26.04/1.3.0"])
+        self.assertEqual(get_semver_tags_on_commit(self.repo), ["1.2.19"])
+        self.assertEqual(get_semver_tags_on_commit(self.repo, "26.04/"), ["1.3.0"])
+
+    def test_resolve_release_version_prefixed_tag_on_commit(self):
+        # A pushed 26.04/1.3.0 tag on HEAD resolves to exactly 1.3.0 (clean semver).
+        self._commit_and_tag("seed", ["26.04/1.3.0"])
+        self.assertEqual(resolve_release_version(self.repo, "26.04/"), "1.3.0")
+
+    def test_resolve_release_version_prefixed_bumps_from_stream_max(self):
+        # An untagged HEAD after 26.04/1.3.0 bumps the 26.04 stream, not the bare one.
+        self._commit_and_tag("seed", ["1.2.50", "26.04/1.3.0"])
+        self._commit_and_tag("next", [])
+        self.assertEqual(resolve_release_version(self.repo, "26.04/"), "1.3.1")
+        self.assertEqual(resolve_release_version(self.repo, ""), "1.2.51")
+
+    def test_resolve_prerelease_version_prefixed_seed_before_first_tag(self):
+        # No 26.04 tag yet: the seed carries the intended first number (1.3.0).
+        self._commit_and_tag("only-bare", ["1.2.19"])
+        self.assertEqual(
+            resolve_prerelease_version(self.repo, "build.abc", "26.04/", "1.3.0"),
+            "1.3.0-dev+build.abc",
+        )
+        # Bare stream still anchors on the bare ancestral tag, unaffected by the seed.
+        self.assertEqual(
+            resolve_prerelease_version(self.repo, "build.abc"),
+            "1.2.19-dev+build.abc",
+        )
+
+    def test_resolve_prerelease_version_prefixed_uses_ancestral(self):
+        # Once a 26.04 release tag exists in history, prereleases anchor on it (prefix stripped).
+        self._commit_and_tag("rel", ["26.04/1.3.0"])
+        self._commit_and_tag("work", [])
+        self.assertEqual(
+            resolve_prerelease_version(self.repo, "build.def", "26.04/", "9.9.9"),
+            "1.3.0-dev+build.def",
+        )
+
     @patch("tachyon_dist_tools.resolve_version.Repo")
     def test_infer_github_repo(self, mock_repo):
         """
@@ -351,8 +426,8 @@ class TestVersionResolution(unittest.TestCase):
         resolved_version = resolve_release_version(repo)
         print(f"Resolved release version: {resolved_version}")
 
-        mock_get_latest_version_tag.assert_called_once_with(repo)
-        mock_get_semver_tags_on_commit.assert_called_once_with(repo)
+        mock_get_latest_version_tag.assert_called_once_with(repo, "")
+        mock_get_semver_tags_on_commit.assert_called_once_with(repo, "")
 
         # Assert the resolved version is the next patch of the latest tag
         self.assertEqual(resolved_version, "2.0.1")
@@ -371,8 +446,8 @@ class TestVersionResolution(unittest.TestCase):
         resolved_version = resolve_release_version(repo)
         print(f"Resolved release version: {resolved_version}")
 
-        mock_get_latest_version_tag.assert_called_once_with(repo)
-        mock_get_semver_tags_on_commit.assert_called_once_with(repo)
+        mock_get_latest_version_tag.assert_called_once_with(repo, "")
+        mock_get_semver_tags_on_commit.assert_called_once_with(repo, "")
 
         # Assert the resolved version is the next patch of the latest tag
         self.assertEqual(resolved_version, "1.0.0")
@@ -390,7 +465,7 @@ class TestVersionResolution(unittest.TestCase):
         resolved_version = resolve_prerelease_version(repo, build_id)
         print(f"Resolved prerelease version: {resolved_version}")
 
-        mock_find_ancestral_release_version.assert_called_once_with(repo)
+        mock_find_ancestral_release_version.assert_called_once_with(repo, None)
 
         # Assert the resolved version is the next prerelease version
         self.assertEqual(resolved_version, "1.0.0-dev+build.12345")
@@ -409,7 +484,7 @@ class TestVersionResolution(unittest.TestCase):
         resolved_version = resolve_prerelease_version(repo, build_id)
         print(f"Resolved prerelease version: {resolved_version}")
 
-        mock_find_ancestral_release_version.assert_called_once_with(repo)
+        mock_find_ancestral_release_version.assert_called_once_with(repo, None)
 
         # Assert the resolved version is the next prerelease version
         self.assertEqual(resolved_version, "99.99.9999-dev+build.12345")
@@ -554,7 +629,7 @@ class TestMainFunction(unittest.TestCase):
             main()
 
         mock_resolve_release.assert_not_called()
-        mock_resolve_prerelease.assert_called_once_with(mock_repo.return_value, "1234")
+        mock_resolve_prerelease.assert_called_once_with(mock_repo.return_value, "1234", "", "99.99.9999")
         mock_create_tag.assert_not_called()
 
         # Capture the output and verify
@@ -651,6 +726,73 @@ class TestMainFunction(unittest.TestCase):
         # Capture the output and verify
         output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
         self.assertEqual(output.strip(), "")
+
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
+    @patch("sys.stdout", new_callable=MagicMock)
+    def test_prerelease_build_with_tag_prefix_and_seed(self, mock_stdout, mock_create_tag, mock_resolve_prerelease, mock_resolve_release, mock_repo):
+        """main threads --tag-prefix and --seed-version into prerelease resolution."""
+        mock_repo.return_value.bare = False
+        mock_resolve_prerelease.return_value = "1.3.0-dev+build.1234"
+
+        with patch("sys.argv", ["resolve_version.py", "--build-type", "prerelease",
+                                 "--build-id", "build.1234", "--tag-prefix", "26.04/",
+                                 "--seed-version", "1.3.0"]):
+            main()
+
+        mock_resolve_release.assert_not_called()
+        mock_resolve_prerelease.assert_called_once_with(mock_repo.return_value, "build.1234", "26.04/", "1.3.0")
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertEqual(output.strip(), "1.3.0-dev+build.1234")
+
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version")
+    @patch("tachyon_dist_tools.resolve_version.resolve_prerelease_version")
+    @patch("sys.stdout", new_callable=MagicMock)
+    def test_release_build_with_tag_prefix(self, mock_stdout, mock_resolve_prerelease, mock_resolve_release, mock_repo):
+        """main threads --tag-prefix into release resolution and prints clean semver."""
+        mock_repo.return_value.bare = False
+        mock_resolve_release.return_value = "1.3.0"
+
+        with patch("sys.argv", ["resolve_version.py", "--build-type", "release", "--tag-prefix", "26.04/"]):
+            main()
+
+        mock_resolve_prerelease.assert_not_called()
+        mock_resolve_release.assert_called_once_with(mock_repo.return_value, "26.04/")
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertEqual(output.strip(), "1.3.0")
+
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    @patch("tachyon_dist_tools.resolve_version.resolve_release_version", return_value="1.3.0")
+    @patch("tachyon_dist_tools.resolve_version.create_version_tag_with_github")
+    @patch("tachyon_dist_tools.resolve_version.tag_exists", return_value=False)
+    @patch("sys.stdout", new_callable=MagicMock)
+    def test_create_tag_with_tag_prefix(self, mock_stdout, mock_tag_exists, mock_create_tag, mock_resolve_release, mock_repo):
+        """--create-tag with --tag-prefix creates a namespaced tag but prints clean semver."""
+        mock_repo.return_value.bare = False
+
+        with patch("sys.argv", ["resolve_version.py", "--build-type", "release",
+                                 "--tag-prefix", "26.04/", "--create-tag"]), \
+             patch.dict(os.environ, {"GITHUB_TOKEN": "fake_token"}):
+            main()
+
+        # The git tag carries the prefix; stdout stays clean semver.
+        mock_tag_exists.assert_called_once_with(mock_repo.return_value, "26.04/1.3.0")
+        mock_create_tag.assert_called_once_with(mock_repo.return_value, "26.04/1.3.0", "fake_token")
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertEqual(output.strip(), "1.3.0")
+
+    @patch("tachyon_dist_tools.resolve_version.Repo")
+    def test_stable_with_tag_prefix_rejected(self, mock_repo):
+        """--tag-prefix is not supported with the stable channel."""
+        mock_repo.return_value.bare = False
+        with patch("sys.argv", ["resolve_version.py", "--build-type", "release",
+                                 "--release-channel", "stable", "--tag-prefix", "26.04/"]):
+            with self.assertRaises(ValueError) as context:
+                main()
+            self.assertIn("--tag-prefix is not supported with release channel 'stable'", str(context.exception))
 
     @patch("tachyon_dist_tools.resolve_version.Repo")
     def test_invalid_git_repository(self, mock_repo):
